@@ -6,6 +6,8 @@ import com.example.wisehome.data.repository.DeviceExtrasRepository
 import com.example.wisehome.data.repository.DeviceFactsRepository
 import com.example.wisehome.data.repository.DeviceRepository
 import com.example.wisehome.data.repository.FloorRepository
+import com.example.wisehome.data.repository.LightScheduleRepository
+import com.example.wisehome.data.repository.RoomRepository
 import com.example.wisehome.data.repository.SwitchRepository
 import com.example.wisehome.data.repository.UsageRepository
 import io.github.jan.supabase.realtime.Realtime
@@ -34,6 +36,8 @@ object RepositoryProvider {
     val switches by lazy { SwitchRepository() }
     val alerts by lazy { AlertRepository() }
     val floors by lazy { FloorRepository() }
+    val rooms by lazy { RoomRepository() }
+    val lightSchedules by lazy { LightScheduleRepository() }
     val usage by lazy { UsageRepository() }
     val facts by lazy { DeviceFactsRepository(switches) }
     val extras by lazy { DeviceExtrasRepository(devices, switches) }
@@ -47,6 +51,8 @@ object RepositoryProvider {
         switches.refresh()
         alerts.refresh()
         facts.refresh()
+        floors.refresh()
+        rooms.refresh()
         _lastSyncedAt.value = nowIso()
     }
 

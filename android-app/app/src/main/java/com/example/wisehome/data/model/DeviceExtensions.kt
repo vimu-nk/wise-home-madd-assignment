@@ -16,8 +16,22 @@ data class DeviceSwitch(
 data class SafetyConfig(
     @SerialName("device_id") val deviceId: String,
     @SerialName("max_on_duration_seconds") val maxOnDurationSeconds: Int,
+    /** Which appliance profile this device follows — keys into [SafetyPreset]. */
+    val kind: String = "iron",
     @SerialName("turned_on_at") val turnedOnAt: String? = null,
     @SerialName("last_auto_cutoff_at") val lastAutoCutoffAt: String? = null
+)
+
+/**
+ * Duration options per appliance kind, read from the database rather than hardcoded
+ * so the caps offered in the UI and the ones seeded server-side cannot drift apart.
+ */
+@Serializable
+data class SafetyPreset(
+    val kind: String,
+    val label: String,
+    @SerialName("default_seconds") val defaultSeconds: Int,
+    @SerialName("options_seconds") val optionsSeconds: List<Int>
 )
 
 @Serializable

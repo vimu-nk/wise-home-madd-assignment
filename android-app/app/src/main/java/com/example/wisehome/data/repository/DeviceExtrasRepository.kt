@@ -7,6 +7,7 @@ import com.example.wisehome.data.model.DeviceSwitch
 import com.example.wisehome.data.model.FanSpeed
 import com.example.wisehome.data.model.PowerMetrics
 import com.example.wisehome.data.model.SafetyConfig
+import com.example.wisehome.data.model.SafetyPreset
 import com.example.wisehome.data.model.Sensor
 import com.example.wisehome.data.model.SmartLock
 import com.example.wisehome.data.model.Thermostat
@@ -134,7 +135,7 @@ class DeviceExtrasRepository(
         invalidate("lock-$deviceId")
     }
 
-    // ---- Safety-capped devices (iron) ----
+    // ---- Safety-capped devices (iron, heaters, hair dryer) ----
 
     fun observeSafetyConfig(deviceId: String): Flow<SafetyConfig?> =
         watchTable("safety-$deviceId", "safety_configs") { getSafetyConfig(deviceId) }
@@ -144,14 +145,31 @@ class DeviceExtrasRepository(
             filter { eq("device_id", deviceId) }
         }.decodeSingleOrNull()
 
+    /**
+     * Duration options for an appliance kind. Reference data that only changes when a
+     * migration runs, so it is fetched on demand rather than watched.
+     */
+    suspend fun getSafetyPreset(kind: String): SafetyPreset? =
+        postgrest.from("safety_presets").select {
+            filter { eq("kind", kind) }
+        }.decodeSingleOrNull()
+
+    /**
+     * Arming the countdown is *not* done here. The `trg_devices_safety_arm` trigger
+     * stamps `turned_on_at` on any OFF -> ON transition, whoever writes it — this app,
+     * the hardware simulator, or the SQL editor. Doing it client-side (as this used to)
+     * meant an iron switched on from the simulator was never timed out at all.
+     */
     suspend fun setIronPower(deviceId: String, on: Boolean) {
         deviceRepository.setStatus(deviceId, if (on) DeviceStatus.ON else DeviceStatus.OFF)
-        runCatching {
-            postgrest.from("safety_configs").update({
-                if (on) set("turned_on_at", nowIso()) else set("turned_on_at", null as String?)
-            }) {
-                filter { eq("device_id", deviceId) }
-            }
+        invalidate("safety-$deviceId")
+    }
+
+    suspend fun setMaxOnDuration(deviceId: String, seconds: Int) {
+        postgrest.from("safety_configs").update({
+            set("max_on_duration_seconds", seconds)
+        }) {
+            filter { eq("device_id", deviceId) }
         }
         invalidate("safety-$deviceId")
     }

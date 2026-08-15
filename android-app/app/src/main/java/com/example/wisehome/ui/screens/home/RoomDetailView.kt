@@ -1,5 +1,6 @@
 package com.example.wisehome.ui.screens.home
 
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -18,11 +19,19 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.res.imageResource
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
 import com.example.wisehome.data.model.Device
+import com.example.wisehome.data.model.DeviceType
 import com.example.wisehome.data.model.DeviceFacts
 import com.example.wisehome.data.model.DeviceStatus
+import com.example.wisehome.data.model.Room
 import com.example.wisehome.ui.components.ControlRow
 import com.example.wisehome.ui.components.DeviceIconBadge
 import com.example.wisehome.ui.components.RowChevron
@@ -44,10 +53,14 @@ fun RoomMap(
     devices: List<Device>,
     facts: Map<String, DeviceFacts>,
     onDeviceClick: (Device) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    @DrawableRes floorPlanRes: Int? = null
 ) {
     val gridLineColor = MaterialTheme.colorScheme.outlineVariant
     val roomFill = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+    // Cropped to this room's cells so the artwork lines up with the grid rather than
+    // showing the whole floor squashed behind one room.
+    val plan = floorPlanRes?.let { ImageBitmap.imageResource(it) }
 
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         val preferredCell = 64.dp
@@ -67,6 +80,26 @@ fun RoomMap(
                         size = Size(size.width, size.height),
                         cornerRadius = CornerRadius(16f, 16f)
                     )
+
+                    if (plan != null) {
+                        val srcX = PLAN_PADDING + room.x0 * PLAN_CELL
+                        val srcY = PLAN_PADDING + room.y0 * PLAN_CELL
+                        // Clamp so a room extending past the artwork (a resized floor,
+                        // or a plan reused on a bigger grid) crops instead of throwing.
+                        val srcW = (room.cols * PLAN_CELL).coerceAtMost(plan.width - srcX)
+                        val srcH = (room.rows * PLAN_CELL).coerceAtMost(plan.height - srcY)
+
+                        if (srcX >= 0 && srcY >= 0 && srcW > 0 && srcH > 0) {
+                            drawImage(
+                                image = plan,
+                                srcOffset = IntOffset(srcX, srcY),
+                                srcSize = IntSize(srcW, srcH),
+                                dstOffset = IntOffset.Zero,
+                                dstSize = IntSize(size.width.toInt(), size.height.toInt()),
+                                alpha = 0.55f
+                            )
+                        }
+                    }
 
                     val dash = PathEffect.dashPathEffect(floatArrayOf(6f, 6f))
                     for (col in 0..room.cols) {
@@ -137,11 +170,27 @@ fun DeviceRow(
             title = device.name,
             subtitle = display.stateLabel,
             leading = {
-                DeviceIconBadge(
-                    icon = iconForDevice(device, ctx),
-                    tint = tint,
-                    contentDescription = null
-                )
+                // Cameras show their latest frame in place of the generic icon — it
+                // updates live as the simulator rotates snapshots.
+                val snapshotUrl = ctx.facts?.cameraSnapshotUrl
+                if (device.type == DeviceType.CAMERA && !snapshotUrl.isNullOrBlank() &&
+                    device.status != DeviceStatus.ERROR && device.status != DeviceStatus.DISCONNECTED
+                ) {
+                    AsyncImage(
+                        model = snapshotUrl,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(MaterialTheme.shapes.small)
+                    )
+                } else {
+                    DeviceIconBadge(
+                        icon = iconForDevice(device, ctx),
+                        tint = tint,
+                        contentDescription = null
+                    )
+                }
             }
         ) {
             if (display.isControllable) {

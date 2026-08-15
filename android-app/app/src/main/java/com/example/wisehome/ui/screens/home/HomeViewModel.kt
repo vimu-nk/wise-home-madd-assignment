@@ -12,12 +12,17 @@ import com.example.wisehome.data.model.DeviceStatus
 import com.example.wisehome.data.model.DeviceType
 import com.example.wisehome.data.model.FanSpeed
 import com.example.wisehome.data.model.Floor
+import com.example.wisehome.data.model.LightSchedule
+import com.example.wisehome.data.model.SafetyPreset
+import com.example.wisehome.data.model.Room
 import com.example.wisehome.data.model.ThermostatMode
 import com.example.wisehome.data.model.UsageLog
 import com.example.wisehome.data.repository.DeviceExtrasRepository
 import com.example.wisehome.data.repository.DeviceFactsRepository
 import com.example.wisehome.data.repository.DeviceRepository
 import com.example.wisehome.data.repository.FloorRepository
+import com.example.wisehome.data.repository.LightScheduleRepository
+import com.example.wisehome.data.repository.RoomRepository
 import com.example.wisehome.data.repository.SwitchRepository
 import com.example.wisehome.data.repository.UsageRepository
 import com.example.wisehome.ui.format.DeviceContext
@@ -43,11 +48,14 @@ class HomeViewModel(
     private val extrasRepository: DeviceExtrasRepository = RepositoryProvider.extras,
     private val usageRepository: UsageRepository = RepositoryProvider.usage,
     private val switchRepository: SwitchRepository = RepositoryProvider.switches,
-    private val factsRepository: DeviceFactsRepository = RepositoryProvider.facts
+    private val factsRepository: DeviceFactsRepository = RepositoryProvider.facts,
+    private val roomRepository: RoomRepository = RepositoryProvider.rooms,
+    private val lightScheduleRepository: LightScheduleRepository = RepositoryProvider.lightSchedules
 ) : ViewModel() {
 
-    private val _floors = MutableStateFlow<List<Floor>>(emptyList())
-    val floors: StateFlow<List<Floor>> = _floors.asStateFlow()
+    /** Floors are editable from Settings now, so this follows the repository's live
+     *  list rather than a one-shot fetch. */
+    val floors: StateFlow<List<Floor>> = floorRepository.observeFloors()
 
     private val _selectedFloorId = MutableStateFlow<String?>(null)
     val selectedFloorId: StateFlow<String?> = _selectedFloorId.asStateFlow()
@@ -68,13 +76,20 @@ class HomeViewModel(
 
     init {
         viewModelScope.launch {
-            val loaded = floorRepository.getFloors()
-            _floors.value = loaded
-            if (_selectedFloorId.value == null) {
-                loaded.firstOrNull()?.let { _selectedFloorId.value = it.id }
+            // Keep a valid selection as floors are added and deleted: default to the
+            // first floor, and fall back to it if the selected floor disappears.
+            floors.collect { loaded ->
+                val current = _selectedFloorId.value
+                if (current == null || loaded.none { it.id == current }) {
+                    _selectedFloorId.value = loaded.firstOrNull()?.id
+                    _selectedRoomLabel.value = null
+                }
             }
         }
     }
+
+    /** Every room in the house; screens filter by floor via [roomsForFloor]. */
+    val rooms: StateFlow<List<Room>> = roomRepository.observeRooms()
 
     fun selectFloor(floorId: String) {
         _selectedFloorId.value = floorId
@@ -178,6 +193,57 @@ class HomeViewModel(
 
     fun toggleUsageHistory() {
         _usageHistoryVisible.value = !_usageHistoryVisible.value
+    }
+
+    // ---- Scheduled lights ----
+
+    /**
+     * Windows for the open device. The app only edits these; the switching is done by
+     * the `run_light_schedules()` worker, so lights keep working with the app closed.
+     */
+    val lightSchedules: StateFlow<List<LightSchedule>> =
+        selectedDevice
+            .distinctUntilChanged { a, b -> a?.id == b?.id }
+            .flatMapLatest { device ->
+                if (device?.type != DeviceType.SCHEDULED_LIGHT) flowOf(emptyList())
+                else lightScheduleRepository.observeSchedules(device.id)
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun addLightSchedule(deviceId: String, startTime: String, endTime: String, days: List<Int>) {
+        viewModelScope.launch {
+            lightScheduleRepository.addSchedule(deviceId, startTime, endTime, days)
+        }
+    }
+
+    fun updateLightSchedule(
+        schedule: LightSchedule,
+        startTime: String = schedule.startTime,
+        endTime: String = schedule.endTime,
+        days: List<Int> = schedule.daysOfWeek,
+        enabled: Boolean = schedule.enabled
+    ) {
+        viewModelScope.launch {
+            lightScheduleRepository.updateSchedule(schedule, startTime, endTime, days, enabled)
+        }
+    }
+
+    fun deleteLightSchedule(schedule: LightSchedule) {
+        viewModelScope.launch { lightScheduleRepository.deleteSchedule(schedule) }
+    }
+
+    // ---- Safety-capped appliances ----
+
+    /** Duration options for the open device's appliance kind (iron, heater, ...). */
+    val safetyPreset: StateFlow<SafetyPreset?> =
+        deviceExtras
+            .map { (it as? DeviceExtrasState.Ready)?.context?.safety?.kind }
+            .distinctUntilChanged()
+            .map { kind -> kind?.let { runCatching { extrasRepository.getSafetyPreset(it) }.getOrNull() } }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    fun setMaxOnDuration(deviceId: String, seconds: Int) {
+        viewModelScope.launch { extrasRepository.setMaxOnDuration(deviceId, seconds) }
     }
 
     fun setDevicePower(device: Device, on: Boolean) {

@@ -17,5 +17,7 @@ data class DeviceFacts(
     val currentTempC: Double? = null,
     val fanSpeed: FanSpeed? = null,
     val sensorReading: Double? = null,
-    val sensorUnit: String? = null
+    val sensorUnit: String? = null,
+    /** Latest camera frame, so list rows can show a thumbnail without opening the sheet. */
+    val cameraSnapshotUrl: String? = null
 )

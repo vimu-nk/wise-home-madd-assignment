@@ -15,60 +15,35 @@ import androidx.compose.material.icons.filled.Stairs
 import androidx.compose.material.icons.filled.Weekend
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.ui.graphics.vector.ImageVector
-import com.example.wisehome.data.model.Device
 import com.example.wisehome.data.model.Floor
+import com.example.wisehome.data.model.Room
 
 /**
- * Cosmetic room outlines drawn over each floor's abstract grid (spec section 5).
- * Not stored in the DB — the schema tracks only device grid_x/grid_y, not room
- * shapes. Coordinates are inclusive grid-cell ranges.
+ * Rooms for a floor, taken from the `rooms` table.
+ *
+ * These used to be hardcoded lists keyed by floor name, which made floors created at
+ * runtime unusable — an unrecognised name fell through to a single room covering the
+ * whole grid. The seeded rows reproduce those original layouts exactly.
+ *
+ * The whole-grid fallback is kept for a floor that genuinely has no rooms yet (one
+ * just added from Settings): its devices still render instead of vanishing.
  */
-data class Room(val label: String, val x0: Int, val y0: Int, val x1: Int, val y1: Int) {
-    val cols: Int get() = x1 - x0 + 1
-    val rows: Int get() = y1 - y0 + 1
-    fun contains(device: Device): Boolean =
-        device.gridX in x0..x1 && device.gridY in y0..y1
-}
+fun roomsForFloor(floor: Floor, allRooms: List<Room>): List<Room> {
+    val mine = allRooms.filter { it.floorId == floor.id }
+    if (mine.isNotEmpty()) return mine
 
-private val GROUND_FLOOR_ROOMS = listOf(
-    Room("Foyer", 0, 0, 1, 0),
-    Room("Living Room", 2, 0, 3, 2),
-    Room("Kitchen", 4, 0, 5, 2),
-    Room("Dining Area", 0, 1, 1, 2),
-    Room("Guest Bedroom", 0, 3, 1, 4),
-    Room("Garage", 2, 3, 5, 4)
-)
-
-private val FIRST_FLOOR_ROOMS = listOf(
-    Room("Master Bedroom", 0, 0, 1, 1),
-    Room("Bedroom 2", 3, 0, 4, 1),
-    Room("Study / Office", 5, 0, 5, 3),
-    Room("Bathroom", 2, 2, 2, 3),
-    Room("Balcony", 0, 4, 1, 4),
-    Room("Landing / Hallway", 2, 4, 4, 4)
-)
-
-private val EXTERIOR_ROOMS = listOf(
-    Room("Walking Gate", 0, 0, 1, 1),
-    Room("Driveway Gate", 3, 0, 4, 1),
-    Room("Front Approach", 2, 2, 5, 3),
-    Room("Back Garden", 5, 4, 7, 5)
-)
-
-/**
- * Rooms for a floor. Falls back to a single room spanning the whole grid rather
- * than an empty list — a floor renamed in the DB used to render a blank screen
- * with no explanation.
- */
-fun roomLayoutFor(floor: Floor): List<Room> =
-    when (floor.name.trim().lowercase()) {
-        "ground floor" -> GROUND_FLOOR_ROOMS
-        "first floor" -> FIRST_FLOOR_ROOMS
-        "exterior / garden", "exterior/garden", "exterior" -> EXTERIOR_ROOMS
-        else -> listOf(
-            Room(floor.name, 0, 0, (floor.gridCols - 1).coerceAtLeast(0), (floor.gridRows - 1).coerceAtLeast(0))
+    return listOf(
+        Room(
+            id = "whole-floor-${floor.id}",
+            floorId = floor.id,
+            label = floor.name,
+            x0 = 0,
+            y0 = 0,
+            x1 = (floor.gridCols - 1).coerceAtLeast(0),
+            y1 = (floor.gridRows - 1).coerceAtLeast(0)
         )
-    }
+    )
+}
 
 fun iconForRoom(label: String): ImageVector = when {
     label.contains("foyer", true) -> Icons.Filled.MeetingRoom

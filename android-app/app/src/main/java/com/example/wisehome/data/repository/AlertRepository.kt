@@ -34,6 +34,19 @@ class AlertRepository {
     private val _errors = MutableSharedFlow<String>(extraBufferCapacity = 4)
     val errors: SharedFlow<String> = _errors.asSharedFlow()
 
+    /**
+     * Alerts that arrived while the app was running, for the notification layer.
+     *
+     * Emitted only from the Realtime INSERT branch, never from [refresh] — a reconnect
+     * re-fetches the whole table, and notifying from there would re-announce every
+     * historical alert. [notifiedIds] guards the case where the same insert is
+     * delivered twice across a socket reconnect.
+     */
+    private val _newAlerts = MutableSharedFlow<Alert>(extraBufferCapacity = 8)
+    val newAlerts: SharedFlow<Alert> = _newAlerts.asSharedFlow()
+
+    private val notifiedIds = mutableSetOf<String>()
+
     fun observeAlerts(): StateFlow<List<Alert>> {
         if (!started) {
             started = true
@@ -67,7 +80,11 @@ class AlertRepository {
         refresh()
         changeFlow.collect { action ->
             alerts.value = when (action) {
-                is PostgresAction.Insert -> listOf(action.decodeRecord<Alert>()) + alerts.value
+                is PostgresAction.Insert -> {
+                    val inserted = action.decodeRecord<Alert>()
+                    if (notifiedIds.add(inserted.id)) _newAlerts.tryEmit(inserted)
+                    listOf(inserted) + alerts.value
+                }
                 is PostgresAction.Update -> {
                     val updated = action.decodeRecord<Alert>()
                     alerts.value.map { if (it.id == updated.id) updated else it }

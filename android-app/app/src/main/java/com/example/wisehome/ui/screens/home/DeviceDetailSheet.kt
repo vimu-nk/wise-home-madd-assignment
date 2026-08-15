@@ -144,7 +144,10 @@ private fun DeviceControls(device: Device, context: DeviceContext, viewModel: Ho
 
     when (device.type) {
         DeviceType.SENSOR, DeviceType.CAMERA -> {
-            SectionCard(title = "Reading") {
+            SectionCard(title = if (device.type == DeviceType.CAMERA) "Live view" else "Reading") {
+                if (device.type == DeviceType.CAMERA) {
+                    CameraSnapshot(device, context)
+                }
                 Text(display.stateLabel, style = MaterialTheme.typography.titleMedium)
                 Text(
                     display.detail ?: "This device reports its state; it has no manual control.",
@@ -218,6 +221,19 @@ private fun DeviceControls(device: Device, context: DeviceContext, viewModel: Ho
                 }
                 context.safety?.let { SafetyTimer(it, device.status == DeviceStatus.ON) }
             }
+            context.safety?.let { SafetyDurationCard(device, it, viewModel) }
+        }
+
+        DeviceType.SCHEDULED_LIGHT -> {
+            SectionCard(title = "Control") {
+                ControlRow(title = display.stateLabel, subtitle = display.detail) {
+                    Switch(
+                        checked = device.status == DeviceStatus.ON,
+                        onCheckedChange = { viewModel.setDevicePower(device, it) }
+                    )
+                }
+            }
+            LightScheduleCard(device, viewModel)
         }
 
         DeviceType.THERMOSTAT, DeviceType.AC_UNIT -> ClimateControls(device, context, viewModel)

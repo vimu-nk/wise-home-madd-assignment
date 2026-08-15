@@ -27,7 +27,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.wisehome.data.model.Device
 import com.example.wisehome.data.model.DeviceFacts
-import com.example.wisehome.data.model.Floor
+import com.example.wisehome.data.model.Room
 import com.example.wisehome.ui.components.StatePill
 import com.example.wisehome.ui.format.DeviceContext
 import com.example.wisehome.ui.format.StateTone
@@ -40,14 +40,12 @@ import com.example.wisehome.ui.theme.Space
  */
 @Composable
 fun RoomListView(
-    floor: Floor,
+    rooms: List<Room>,
     devices: List<Device>,
     facts: Map<String, DeviceFacts>,
     onRoomClick: (Room) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val rooms = roomLayoutFor(floor)
-
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = 168.dp),
         modifier = modifier.fillMaxSize(),

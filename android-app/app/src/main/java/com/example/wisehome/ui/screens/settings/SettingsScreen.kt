@@ -15,6 +15,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -52,6 +53,9 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
     val lastSynced by viewModel.lastSyncedAt.collectAsState()
     val summary by viewModel.summary.collectAsState()
     val refreshing by viewModel.refreshing.collectAsState()
+    val floors by viewModel.floors.collectAsState()
+    val rooms by viewModel.rooms.collectAsState()
+    val editorError by viewModel.editorError.collectAsState()
 
     Scaffold(
         contentWindowInsets = WindowInsets(0),
@@ -112,14 +116,18 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                 ControlRow(title = "Floors") { Text("${summary.floors.size}") }
                 ControlRow(title = "Rooms") { Text("${summary.roomCount}") }
                 ControlRow(title = "Devices") { Text("${summary.deviceCount}") }
-                summary.floors.forEach { floor ->
-                    Text(
-                        "${floor.name} · ${floor.gridCols}×${floor.gridRows} grid",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
             }
+
+            FloorManagementSection(
+                floors = floors,
+                rooms = rooms,
+                onAddFloor = viewModel::addFloor,
+                onUpdateFloor = viewModel::updateFloor,
+                onDeleteFloor = viewModel::deleteFloor,
+                onAddRoom = viewModel::addRoom,
+                onUpdateRoom = viewModel::updateRoom,
+                onDeleteRoom = viewModel::deleteRoom
+            )
 
             SectionCard(title = "About") {
                 Text(
@@ -133,6 +141,17 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                 )
             }
         }
+    }
+
+    // A rejected write (duplicate room name, RLS policy, offline) has to be visible —
+    // a dialog that just closes with nothing saved reads as a broken button.
+    editorError?.let { message ->
+        AlertDialog(
+            onDismissRequest = viewModel::clearEditorError,
+            title = { Text("Couldn't save") },
+            text = { Text(message) },
+            confirmButton = { TextButton(onClick = viewModel::clearEditorError) { Text("OK") } }
+        )
     }
 }
 

@@ -47,6 +47,7 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
     val devices by viewModel.devicesOnSelectedFloor.collectAsState()
     val selectedDevice by viewModel.selectedDevice.collectAsState()
     val facts by viewModel.deviceFacts.collectAsState()
+    val allRooms by viewModel.rooms.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(Unit) {
@@ -55,8 +56,8 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
 
     val selectedIndex = floors.indexOfFirst { it.id == selectedFloorId }.coerceAtLeast(0)
     val currentFloor = floors.getOrNull(selectedIndex)
-    val currentRoom = currentFloor
-        ?.let { floor -> roomLayoutFor(floor).find { it.label == selectedRoomLabel } }
+    val floorRooms = currentFloor?.let { roomsForFloor(it, allRooms) }.orEmpty()
+    val currentRoom = floorRooms.find { it.label == selectedRoomLabel }
 
     BackHandler(enabled = currentRoom != null) { viewModel.selectRoom(null) }
 
@@ -105,7 +106,7 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
                         )
                     } else {
                         RoomListView(
-                            floor = currentFloor,
+                            rooms = floorRooms,
                             devices = devices,
                             facts = facts,
                             onRoomClick = { viewModel.selectRoom(it.label) }
@@ -126,6 +127,7 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
                             ) {
                                 RoomMap(
                                     room = currentRoom,
+                                    floorPlanRes = floorPlanDrawable(currentFloor.imageUrl),
                                     devices = roomDevices,
                                     facts = facts,
                                     onDeviceClick = { viewModel.selectDevice(it.id) }

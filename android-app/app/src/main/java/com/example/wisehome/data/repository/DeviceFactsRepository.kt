@@ -1,5 +1,6 @@
 package com.example.wisehome.data.repository
 
+import com.example.wisehome.data.model.Camera
 import com.example.wisehome.data.model.AcUnit
 import com.example.wisehome.data.model.DeviceFacts
 import com.example.wisehome.data.model.DeviceStatus
@@ -47,6 +48,8 @@ class DeviceFactsRepository(
             scope.launch { watch("facts-thermostats", "thermostats") }
             scope.launch { watch("facts-ac-units", "ac_units") }
             scope.launch { watch("facts-sensors", "sensors") }
+            // Camera snapshots rotate from the simulator; list thumbnails follow them live.
+            scope.launch { watch("facts-cameras", "cameras") }
             scope.launch {
                 // Switch counts come from the shared switches subscription.
                 switchRepository.observeSwitches().collect { rebuildSwitchCounts() }
@@ -90,6 +93,9 @@ class DeviceFactsRepository(
         val acUnits = runCatching {
             postgrest.from("ac_units").select().decodeList<AcUnit>()
         }.getOrDefault(emptyList())
+        val cameras = runCatching {
+            postgrest.from("cameras").select().decodeList<Camera>()
+        }.getOrDefault(emptyList())
         val switchesByDevice = switchRepository.observeSwitches().value.groupBy { it.deviceId }
 
         val merged = mutableMapOf<String, DeviceFacts>()
@@ -125,6 +131,9 @@ class DeviceFactsRepository(
         }
         acUnits.forEach { ac ->
             edit(ac.deviceId) { it.copy(currentTempC = ac.currentTempC, fanSpeed = ac.fanSpeed) }
+        }
+        cameras.forEach { camera ->
+            edit(camera.deviceId) { it.copy(cameraSnapshotUrl = camera.lastSnapshotUrl) }
         }
         switchesByDevice.forEach { (deviceId, switches) ->
             edit(deviceId) {

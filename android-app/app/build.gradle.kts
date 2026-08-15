@@ -73,6 +73,8 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.ktor.client.okhttp)
+    implementation(libs.coil.compose)
+    implementation(libs.coil.network.okhttp)
     implementation(libs.supabase.postgrest)
     implementation(libs.supabase.realtime)
     coreLibraryDesugaring(libs.android.desugar.jdk.libs)

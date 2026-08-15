@@ -7,8 +7,9 @@ import com.example.wisehome.data.RepositoryProvider
 import com.example.wisehome.data.TemperatureUnit
 import com.example.wisehome.data.ThemeMode
 import com.example.wisehome.data.model.Floor
+import com.example.wisehome.data.model.Room
 import com.example.wisehome.data.remote.SupabaseClientProvider
-import com.example.wisehome.ui.screens.home.roomLayoutFor
+
 import io.github.jan.supabase.realtime.Realtime
 import io.github.jan.supabase.realtime.realtime
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -36,33 +37,75 @@ class SettingsViewModel : ViewModel() {
         SupabaseClientProvider.client.realtime.status
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), Realtime.Status.DISCONNECTED)
 
-    private val _floors = MutableStateFlow<List<Floor>>(emptyList())
+    private val floorRepository = RepositoryProvider.floors
+    private val roomRepository = RepositoryProvider.rooms
+
+    val floors: StateFlow<List<Floor>> = floorRepository.observeFloors()
+    val rooms: StateFlow<List<Room>> = roomRepository.observeRooms()
 
     val summary: StateFlow<HomeSummary> =
-        combine(_floors, RepositoryProvider.devices.observeDevices()) { floors, devices ->
+        combine(floors, rooms, RepositoryProvider.devices.observeDevices()) { floors, rooms, devices ->
             HomeSummary(
                 floors = floors,
-                roomCount = floors.sumOf { roomLayoutFor(it).size },
+                roomCount = rooms.size,
                 deviceCount = devices.size
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeSummary())
 
+    private val _editorError = MutableStateFlow<String?>(null)
+    val editorError: StateFlow<String?> = _editorError.asStateFlow()
+
+    fun clearEditorError() { _editorError.value = null }
+
+    // ---- Floor management ----
+
+    fun addFloor(name: String, imageUrl: String, gridCols: Int, gridRows: Int) = edit {
+        floorRepository.addFloor(name.trim(), imageUrl, gridCols, gridRows)
+    }
+
+    fun updateFloor(floor: Floor, name: String, imageUrl: String, gridCols: Int, gridRows: Int) = edit {
+        floorRepository.updateFloor(floor.id, name.trim(), imageUrl, gridCols, gridRows)
+    }
+
+    /** Cascades to the floor's rooms and devices — callers must confirm first. */
+    fun deleteFloor(floor: Floor) = edit { floorRepository.deleteFloor(floor.id) }
+
+    // ---- Room management ----
+
+    fun addRoom(floorId: String, label: String, x0: Int, y0: Int, x1: Int, y1: Int) = edit {
+        roomRepository.addRoom(floorId, label.trim(), x0, y0, x1, y1)
+    }
+
+    fun updateRoom(room: Room, label: String, x0: Int, y0: Int, x1: Int, y1: Int) = edit {
+        roomRepository.updateRoom(room.id, label.trim(), x0, y0, x1, y1)
+    }
+
+    fun deleteRoom(room: Room) = edit { roomRepository.deleteRoom(room.id) }
+
+    /**
+     * Surfaces write failures instead of swallowing them. A duplicate room label or a
+     * name colliding on (floor, label) comes back as a Postgres error, and silently
+     * doing nothing would look like the button was broken.
+     */
+    private fun edit(block: suspend () -> Unit) {
+        viewModelScope.launch {
+            runCatching { block() }
+                .onFailure { _editorError.value = it.message ?: "That change could not be saved" }
+        }
+    }
+
     private val _refreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
-
-    init {
-        viewModelScope.launch { _floors.value = RepositoryProvider.floors.getFloors() }
-    }
 
     fun setThemeMode(mode: ThemeMode) = AppPreferences.setThemeMode(mode)
 
     fun setTemperatureUnit(unit: TemperatureUnit) = AppPreferences.setTemperatureUnit(unit)
 
+    /** refreshAll() already re-reads floors and rooms, and both are observed. */
     fun refreshNow() {
         viewModelScope.launch {
             _refreshing.value = true
             RepositoryProvider.refreshAll()
-            _floors.value = RepositoryProvider.floors.getFloors()
             _refreshing.value = false
         }
     }
