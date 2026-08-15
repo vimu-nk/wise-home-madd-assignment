@@ -1,0 +1,299 @@
+/* Palette mirrors the Android app's Color.kt so both clients read as one system. */
+:root {
+  --primary: #0284c7;
+  --primary-container: #e0f2fe;
+  --background: #f8fafc;
+  --surface: #ffffff;
+  --surface-variant: #e9eef4;
+  --on-surface: #0f172a;
+  --on-surface-variant: #475569;
+  --outline: #cbd5e1;
+  --tone-active: #16a34a;
+  --tone-idle: #64748b;
+  --tone-attention: #b45309;
+  --tone-fault: #dc2626;
+  --tone-offline: #94a3b8;
+  --radius-lg: 16px;
+  --radius-md: 10px;
+  --space-xs: 4px;
+  --space-s: 8px;
+  --space-m: 12px;
+  --space-l: 16px;
+  --space-xl: 24px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --primary: #38bdf8;
+    --primary-container: #0b3a52;
+    --background: #0b1220;
+    --surface: #121b2e;
+    --surface-variant: #1e293b;
+    --on-surface: #f1f5f9;
+    --on-surface-variant: #cbd5e1;
+    --outline: #334155;
+    --tone-active: #4ade80;
+    --tone-idle: #94a3b8;
+    --tone-attention: #f59e0b;
+    --tone-fault: #f87171;
+    --tone-offline: #64748b;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, "Segoe UI", Roboto, system-ui, sans-serif;
+  margin: 0;
+  background: var(--background);
+  color: var(--on-surface);
+  min-height: 100vh;
+}
+
+/* ------------------------------------------------------------------ header */
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-l);
+  flex-wrap: wrap;
+  padding: var(--space-l) var(--space-xl);
+  background: var(--surface);
+  border-bottom: 1px solid var(--outline);
+}
+
+.brand { display: flex; align-items: center; gap: var(--space-m); }
+
+.brand-dot {
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: var(--primary);
+  box-shadow: 0 0 0 4px var(--primary-container);
+}
+
+.brand h1 { margin: 0; font-size: 1.15rem; font-weight: 600; }
+.subtitle { margin: 0; font-size: 0.8rem; color: var(--on-surface-variant); }
+
+.header-right { display: flex; align-items: center; gap: var(--space-xl); }
+
+.connection {
+  display: flex; align-items: center; gap: var(--space-s);
+  font-size: 0.85rem; color: var(--on-surface-variant);
+}
+
+.status-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--tone-offline); }
+.status-dot.active { background: var(--tone-active); }
+.status-dot.offline { background: var(--tone-offline); }
+
+.switch-field {
+  display: flex; align-items: center; gap: var(--space-s);
+  font-size: 0.85rem; font-weight: 500; cursor: pointer; user-select: none;
+}
+
+.switch { position: relative; display: inline-block; }
+.switch input { position: absolute; opacity: 0; width: 44px; height: 24px; margin: 0; cursor: pointer; }
+.switch-track {
+  position: relative; display: block; width: 44px; height: 24px;
+  border-radius: 999px; background: var(--outline);
+  transition: background 150ms ease;
+}
+/* Inset with top/left, not margin: the track has no padding or border, so a
+   margin on the thumb collapses through it — the thumb ends up flush with the
+   track's top edge and the track itself gets pushed 3px down in the header. */
+.switch-thumb {
+  position: absolute; top: 3px; left: 3px; width: 18px; height: 18px;
+  border-radius: 50%; background: var(--surface);
+  transition: transform 150ms ease;
+}
+.switch input:checked + .switch-track { background: var(--primary); }
+.switch input:checked + .switch-track .switch-thumb { transform: translateX(20px); }
+
+/* -------------------------------------------------------------- floor tabs */
+
+.floor-tabs {
+  display: flex; gap: var(--space-s);
+  padding: var(--space-l) var(--space-xl) 0;
+  max-width: 1100px; margin: 0 auto;
+  overflow-x: auto;
+}
+
+.floor-tab {
+  border: 1px solid var(--outline);
+  background: transparent;
+  color: var(--on-surface-variant);
+  border-radius: 999px;
+  padding: var(--space-s) var(--space-l);
+  font-size: 0.85rem; font-weight: 600;
+  cursor: pointer; white-space: nowrap;
+  transition: all 150ms ease;
+}
+
+.floor-tab:hover { border-color: var(--primary); }
+
+.floor-tab.is-selected {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--surface);
+}
+
+/* ------------------------------------------------------------------- rooms */
+
+.room-list {
+  max-width: 1100px; margin: 0 auto;
+  padding: var(--space-l) var(--space-xl) var(--space-xl);
+  display: flex; flex-direction: column; gap: var(--space-xl);
+}
+
+.status-line { color: var(--on-surface-variant); }
+
+.fatal, .empty {
+  padding: var(--space-l);
+  border-radius: var(--radius-lg);
+  background: var(--surface-variant);
+  color: var(--on-surface-variant);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.fatal {
+  border-left: 4px solid var(--tone-fault);
+  color: var(--on-surface);
+}
+
+.room-header {
+  display: flex; align-items: baseline; gap: var(--space-m);
+  margin-bottom: var(--space-m);
+}
+
+.room-header h2 {
+  margin: 0; font-size: 0.95rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+
+.room-count { font-size: 0.8rem; color: var(--on-surface-variant); }
+
+.device-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+  gap: var(--space-m);
+  /* Every card in a row is the height of the tallest one. */
+  grid-auto-rows: 1fr;
+}
+
+/* ------------------------------------------------------------ device cards */
+
+.device-card {
+  background: var(--surface-variant);
+  border-radius: var(--radius-lg);
+  padding: var(--space-l);
+  display: flex; flex-direction: column; gap: var(--space-m);
+  height: 100%;
+}
+
+/* Push the hardware-fault row to the bottom so cards of differing content
+   still line their controls up with each other. */
+.device-card .fault-row { margin-top: auto; }
+
+.device-card-top {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: var(--space-s);
+}
+
+.device-name { font-weight: 600; font-size: 0.95rem; }
+.device-type { font-size: 0.75rem; color: var(--on-surface-variant); }
+.device-detail { font-size: 0.8rem; color: var(--on-surface-variant); }
+
+.status-badge {
+  font-size: 0.7rem; font-weight: 700; letter-spacing: 0.03em;
+  padding: 3px 10px; border-radius: 999px; white-space: nowrap;
+}
+
+.status-badge.active     { color: var(--tone-active);     background: color-mix(in srgb, var(--tone-active) 18%, transparent); }
+.status-badge.idle       { color: var(--tone-idle);       background: color-mix(in srgb, var(--tone-idle) 18%, transparent); }
+.status-badge.attention  { color: var(--tone-attention);  background: color-mix(in srgb, var(--tone-attention) 18%, transparent); }
+.status-badge.fault      { color: var(--tone-fault);      background: color-mix(in srgb, var(--tone-fault) 18%, transparent); }
+.status-badge.offline    { color: var(--tone-offline);    background: color-mix(in srgb, var(--tone-offline) 18%, transparent); }
+
+/* ---------------------------------------------------------------- controls */
+
+.device-controls { display: flex; flex-direction: column; gap: var(--space-s); }
+
+.btn {
+  border: none; border-radius: var(--radius-md);
+  padding: 10px var(--space-l);
+  min-height: 40px;
+  font-size: 0.8rem; font-weight: 600;
+  cursor: pointer;
+  background: var(--primary); color: var(--surface);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.btn:hover:not(:disabled) { opacity: 0.9; }
+.btn:active:not(:disabled) { transform: scale(0.97); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-ghost {
+  background: transparent;
+  color: var(--on-surface-variant);
+  border: 1px solid var(--outline);
+}
+
+.btn-row { display: flex; gap: var(--space-s); }
+
+.switch-list { display: flex; flex-direction: column; gap: var(--space-s); }
+
+.switch-row {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: var(--space-s); font-size: 0.85rem;
+}
+
+.sensor-controls,
+.camera-controls,
+.ac-controls,
+.power-controls {
+  display: flex; flex-direction: column; gap: var(--space-s);
+}
+
+.slider { width: 100%; accent-color: var(--primary); }
+
+.reading { font-size: 0.85rem; color: var(--on-surface-variant); font-variant-numeric: tabular-nums; }
+
+.hint { margin: 0; font-size: 0.78rem; color: var(--on-surface-variant); }
+
+.snapshot {
+  width: 100%; height: 130px; object-fit: cover;
+  border-radius: var(--radius-md);
+}
+
+.snapshot-placeholder {
+  width: 100%; height: 130px;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  border: 1px dashed var(--outline);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.8rem; color: var(--on-surface-variant);
+}
+
+/* Hardware fault simulation — ERROR / DISCONNECTED can only originate here. */
+.fault-row {
+  display: flex; align-items: center; gap: var(--space-s);
+  padding-top: var(--space-s);
+  border-top: 1px dashed var(--outline);
+  flex-wrap: wrap;
+}
+
+.fault-label {
+  font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--on-surface-variant); margin-right: auto;
+}
+
+.fault-row .btn { padding: 6px var(--space-m); min-height: 32px; font-size: 0.72rem; }
+
+@media (max-width: 560px) {
+  .app-header, .floor-tabs, .room-list { padding-left: var(--space-l); padding-right: var(--space-l); }
+  .header-right { gap: var(--space-l); }
+}

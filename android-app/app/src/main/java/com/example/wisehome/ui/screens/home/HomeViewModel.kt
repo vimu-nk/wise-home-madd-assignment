@@ -1,0 +1,235 @@
+@file:OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+
+package com.example.wisehome.ui.screens.home
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.wisehome.data.RepositoryProvider
+import com.example.wisehome.data.model.ControlMode
+import com.example.wisehome.data.model.Device
+import com.example.wisehome.data.model.DeviceFacts
+import com.example.wisehome.data.model.DeviceStatus
+import com.example.wisehome.data.model.DeviceType
+import com.example.wisehome.data.model.FanSpeed
+import com.example.wisehome.data.model.Floor
+import com.example.wisehome.data.model.ThermostatMode
+import com.example.wisehome.data.model.UsageLog
+import com.example.wisehome.data.repository.DeviceExtrasRepository
+import com.example.wisehome.data.repository.DeviceFactsRepository
+import com.example.wisehome.data.repository.DeviceRepository
+import com.example.wisehome.data.repository.FloorRepository
+import com.example.wisehome.data.repository.SwitchRepository
+import com.example.wisehome.data.repository.UsageRepository
+import com.example.wisehome.ui.format.DeviceContext
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+
+class HomeViewModel(
+    private val deviceRepository: DeviceRepository = RepositoryProvider.devices,
+    private val floorRepository: FloorRepository = RepositoryProvider.floors,
+    private val extrasRepository: DeviceExtrasRepository = RepositoryProvider.extras,
+    private val usageRepository: UsageRepository = RepositoryProvider.usage,
+    private val switchRepository: SwitchRepository = RepositoryProvider.switches,
+    private val factsRepository: DeviceFactsRepository = RepositoryProvider.facts
+) : ViewModel() {
+
+    private val _floors = MutableStateFlow<List<Floor>>(emptyList())
+    val floors: StateFlow<List<Floor>> = _floors.asStateFlow()
+
+    private val _selectedFloorId = MutableStateFlow<String?>(null)
+    val selectedFloorId: StateFlow<String?> = _selectedFloorId.asStateFlow()
+
+    private val _selectedRoomLabel = MutableStateFlow<String?>(null)
+    val selectedRoomLabel: StateFlow<String?> = _selectedRoomLabel.asStateFlow()
+
+    private val _selectedDeviceId = MutableStateFlow<String?>(null)
+
+    private val _usageHistoryVisible = MutableStateFlow(false)
+    val usageHistoryVisible: StateFlow<Boolean> = _usageHistoryVisible.asStateFlow()
+
+    val errors: Flow<String> =
+        merge(deviceRepository.errors, switchRepository.errors, RepositoryProvider.alerts.errors)
+
+    /** Facts for every device, so rooms and grid badges can label without a sheet. */
+    val deviceFacts: StateFlow<Map<String, DeviceFacts>> = factsRepository.observeFacts()
+
+    init {
+        viewModelScope.launch {
+            val loaded = floorRepository.getFloors()
+            _floors.value = loaded
+            if (_selectedFloorId.value == null) {
+                loaded.firstOrNull()?.let { _selectedFloorId.value = it.id }
+            }
+        }
+    }
+
+    fun selectFloor(floorId: String) {
+        _selectedFloorId.value = floorId
+        _selectedRoomLabel.value = null
+    }
+
+    fun selectRoom(roomLabel: String?) {
+        _selectedRoomLabel.value = roomLabel
+    }
+
+    val devicesOnSelectedFloor: StateFlow<List<Device>> =
+        combine(deviceRepository.observeDevices(), _selectedFloorId) { devices, floorId ->
+            if (floorId == null) emptyList() else devices.filter { it.floorId == floorId }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val selectedDevice: StateFlow<Device?> =
+        combine(deviceRepository.observeDevices(), _selectedDeviceId) { devices, id ->
+            devices.find { it.id == id }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * Fully derived — no snapshot reads. The old version looked up the device from
+     * `observeDevices().value` at tap time and gave up permanently if the list
+     * hadn't loaded yet.
+     */
+    val deviceExtras: StateFlow<DeviceExtrasState> =
+        selectedDevice
+            .distinctUntilChanged { a, b -> a?.id == b?.id && a?.type == b?.type }
+            .flatMapLatest { device ->
+                if (device == null) flowOf(DeviceExtrasState.Ready(DeviceContext.Empty))
+                else observeContext(device)
+                    .map<DeviceContext, DeviceExtrasState> { DeviceExtrasState.Ready(it) }
+                    .onStart { emit(DeviceExtrasState.Loading) }
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DeviceExtrasState.Loading)
+
+    private fun observeContext(device: Device): Flow<DeviceContext> = when (device.type) {
+        DeviceType.MULTISWITCH ->
+            extrasRepository.observeSwitches(device.id).map { DeviceContext(switches = it) }
+
+        DeviceType.SMART_LOCK ->
+            extrasRepository.observeLock(device.id).map { DeviceContext(lock = it) }
+
+        DeviceType.SCHEDULED_SAFETY ->
+            extrasRepository.observeSafetyConfig(device.id).map { DeviceContext(safety = it) }
+
+        DeviceType.THERMOSTAT ->
+            extrasRepository.observeThermostat(device.id).flatMapLatest { thermostat ->
+                val acId = thermostat?.controlsDeviceId
+                if (acId == null) {
+                    flowOf(DeviceContext(thermostat = thermostat))
+                } else {
+                    // combine with the shared devices flow rather than reading .value,
+                    // so the linked AC device resolves regardless of load order.
+                    combine(
+                        extrasRepository.observeAcUnit(acId),
+                        deviceRepository.observeDevices()
+                    ) { acUnit, devices ->
+                        DeviceContext(
+                            thermostat = thermostat,
+                            acUnit = acUnit,
+                            acDevice = devices.find { it.id == acId }
+                        )
+                    }
+                }
+            }
+
+        DeviceType.AC_UNIT ->
+            combine(
+                extrasRepository.observeThermostatControlling(device.id),
+                extrasRepository.observeAcUnit(device.id)
+            ) { thermostat, acUnit ->
+                DeviceContext(thermostat = thermostat, acUnit = acUnit, acDevice = device)
+            }
+
+        DeviceType.SENSOR ->
+            extrasRepository.observeSensor(device.id).map { DeviceContext(sensor = it) }
+
+        DeviceType.CAMERA ->
+            extrasRepository.observeCamera(device.id).map { DeviceContext(camera = it) }
+
+        DeviceType.SMART_PLUG_METERED ->
+            extrasRepository.observePowerMetrics(device.id).map { DeviceContext(power = it) }
+
+        else -> flowOf(DeviceContext.Empty)
+    }
+
+    /** Live history: DB triggers write the row, Realtime delivers it, list grows in place. */
+    val usageHistory: StateFlow<List<UsageLog>> =
+        combine(_selectedDeviceId, _usageHistoryVisible) { id, visible -> id.takeIf { visible } }
+            .distinctUntilChanged()
+            .flatMapLatest { id ->
+                if (id == null) flowOf(emptyList()) else usageRepository.observeUsageForDevice(id)
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun selectDevice(deviceId: String?) {
+        _selectedDeviceId.value = deviceId
+        _usageHistoryVisible.value = false
+    }
+
+    fun toggleUsageHistory() {
+        _usageHistoryVisible.value = !_usageHistoryVisible.value
+    }
+
+    fun setDevicePower(device: Device, on: Boolean) {
+        viewModelScope.launch {
+            when (device.type) {
+                DeviceType.SCHEDULED_SAFETY -> extrasRepository.setIronPower(device.id, on)
+                DeviceType.SMART_LOCK -> extrasRepository.setLockState(device.id, on)
+                else -> deviceRepository.setStatus(
+                    device.id,
+                    if (on) DeviceStatus.ON else DeviceStatus.OFF
+                )
+            }
+        }
+    }
+
+    fun toggleDevice(device: Device) = setDevicePower(device, device.status != DeviceStatus.ON)
+
+    fun setControlMode(deviceId: String, mode: ControlMode) {
+        viewModelScope.launch { deviceRepository.setControlMode(deviceId, mode) }
+    }
+
+    fun toggleSwitch(deviceId: String, switchId: String, currentStatus: DeviceStatus) {
+        viewModelScope.launch {
+            val next = if (currentStatus == DeviceStatus.ON) DeviceStatus.OFF else DeviceStatus.ON
+            extrasRepository.setSwitchStatus(deviceId, switchId, next)
+        }
+    }
+
+    fun setAllSwitches(deviceId: String, on: Boolean) {
+        viewModelScope.launch {
+            extrasRepository.setAllSwitches(
+                deviceId,
+                if (on) DeviceStatus.ON else DeviceStatus.OFF
+            )
+        }
+    }
+
+    fun setLockState(deviceId: String, locked: Boolean) {
+        viewModelScope.launch { extrasRepository.setLockState(deviceId, locked) }
+    }
+
+    fun setThermostatTarget(deviceId: String, targetTempC: Double) {
+        viewModelScope.launch {
+            extrasRepository.setThermostatTarget(deviceId, targetTempC.coerceIn(10.0, 32.0))
+        }
+    }
+
+    fun setThermostatMode(deviceId: String, acDeviceId: String?, mode: ThermostatMode) {
+        viewModelScope.launch { extrasRepository.setThermostatMode(deviceId, acDeviceId, mode) }
+    }
+
+    fun setAcFanSpeed(acDeviceId: String, fanSpeed: FanSpeed) {
+        viewModelScope.launch { extrasRepository.setAcFanSpeed(acDeviceId, fanSpeed) }
+    }
+}

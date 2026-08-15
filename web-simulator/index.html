@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>WiseHome — Hardware Simulator</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-dot"></span>
+      <div>
+        <h1>WiseHome</h1>
+        <p class="subtitle">Hardware Simulator</p>
+      </div>
+    </div>
+
+    <div class="header-right">
+      <div class="connection">
+        <span id="connection-dot" class="status-dot offline"></span>
+        <span id="connection-text">Connecting…</span>
+      </div>
+      <label class="switch-field">
+        <span>Simulate</span>
+        <span class="switch">
+          <input type="checkbox" id="simulate-toggle" />
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+        </span>
+      </label>
+    </div>
+  </header>
+
+  <nav id="floor-tabs" class="floor-tabs"></nav>
+
+  <main id="room-list" class="room-list">
+    <p class="status-line">Connecting to Supabase…</p>
+  </main>
+
+  <!-- supabase-js is vendored rather than pulled from a CDN: no SRI to go stale,
+       nothing to block, and the simulator still runs with no internet beyond the
+       Supabase project itself. -->
+  <script src="supabase.js?v=3"></script>
+  <!-- ?v= is a cache buster: bump it whenever these files change, otherwise the
+       browser can serve a stale index.html/app.js pair and the page dies on load. -->
+  <script src="config.js?v=3"></script>
+  <script src="timeformat.js?v=3"></script>
+  <script src="vocabulary.js?v=3"></script>
+  <script src="app.js?v=3"></script>
+</body>
+</html>
