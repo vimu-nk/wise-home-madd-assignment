@@ -1,8 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Adaptive-icon foreground: the stock Material "home" glyph (filled, 24dp path
-     data) on the 108dp adaptive canvas.
-     The group scales the 24x24 glyph to 52.8dp and centres it, keeping it inside
-     the 66dp safe zone so no launcher mask can clip it. -->
+<!-- Themed-icon layer (Android 13+): same Material "home" glyph, flat white so
+     the system can tint it with the user's wallpaper palette. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
