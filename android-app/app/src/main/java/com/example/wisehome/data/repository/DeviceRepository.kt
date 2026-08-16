@@ -3,6 +3,7 @@ package com.example.wisehome.data.repository
 import com.example.wisehome.data.model.ControlMode
 import com.example.wisehome.data.model.Device
 import com.example.wisehome.data.model.DeviceStatus
+import com.example.wisehome.data.model.DeviceType
 import com.example.wisehome.data.remote.SupabaseClientProvider
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
@@ -22,6 +23,19 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+
+/** Insert payload — the database assigns id, status, control_mode and timestamps. */
+@Serializable
+private data class DeviceInsert(
+    @SerialName("floor_id") val floorId: String,
+    val name: String,
+    val type: DeviceType,
+    @SerialName("grid_x") val gridX: Int,
+    @SerialName("grid_y") val gridY: Int,
+    @SerialName("appliance_type") val applianceType: String? = null
+)
 
 /**
  * Single realtime subscription on `devices`, shared app-wide (per section 3 of the spec).
@@ -106,6 +120,59 @@ class DeviceRepository {
             replaceLocal(previous)
             _errors.tryEmit("Couldn't update ${previous.name}")
         }
+    }
+
+    /**
+     * Creates a device and returns its server-assigned row.
+     *
+     * Type-specific extension rows are *not* created here — see
+     * [DeviceExtrasRepository.createExtensionRow], which the ViewModel calls next. Kept
+     * separate so this stays the single owner of the `devices` table and its cache.
+     */
+    suspend fun addDevice(
+        floorId: String,
+        name: String,
+        type: DeviceType,
+        gridX: Int,
+        gridY: Int,
+        applianceType: String? = null
+    ): Device {
+        val created = postgrest.from("devices")
+            .insert(DeviceInsert(floorId, name, type, gridX, gridY, applianceType)) {
+                select()
+            }
+            .decodeSingle<Device>()
+        devices.update { it + created }
+        return created
+    }
+
+    suspend fun updateDevice(
+        deviceId: String,
+        name: String,
+        gridX: Int,
+        gridY: Int,
+        floorId: String,
+        applianceType: String? = null
+    ) {
+        postgrest.from("devices").update({
+            set("name", name)
+            set("grid_x", gridX)
+            set("grid_y", gridY)
+            set("floor_id", floorId)
+            set("appliance_type", applianceType)
+        }) {
+            filter { eq("id", deviceId) }
+        }
+        val row = postgrest.from("devices")
+            .select { filter { eq("id", deviceId) } }
+            .decodeSingle<Device>()
+        replaceLocal(row)
+    }
+
+    /** Extension rows, switches, usage logs and alerts cascade with the device. */
+    suspend fun deleteDevice(deviceId: String) {
+        postgrest.from("devices").delete { filter { eq("id", deviceId) } }
+        devices.update { list -> list.filterNot { it.id == deviceId } }
     }
 
     suspend fun setControlMode(deviceId: String, mode: ControlMode) {

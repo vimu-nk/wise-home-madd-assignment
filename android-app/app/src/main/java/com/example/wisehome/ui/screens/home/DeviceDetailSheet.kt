@@ -23,6 +23,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -74,7 +75,12 @@ import java.time.Duration
 import java.time.Instant
 
 @Composable
-fun DeviceDetailSheet(device: Device, viewModel: HomeViewModel, onDismiss: () -> Unit) {
+fun DeviceDetailSheet(
+    device: Device,
+    viewModel: HomeViewModel,
+    onDismiss: () -> Unit,
+    onEdit: () -> Unit = {}
+) {
     val extrasState by viewModel.deviceExtras.collectAsState()
     val facts by viewModel.deviceFacts.collectAsState()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
@@ -82,6 +88,30 @@ fun DeviceDetailSheet(device: Device, viewModel: HomeViewModel, onDismiss: () ->
     val loading = extrasState is DeviceExtrasState.Loading
     val baseContext = (extrasState as? DeviceExtrasState.Ready)?.context ?: DeviceContext.Empty
     val context = baseContext.copy(facts = baseContext.facts ?: facts[device.id])
+    var confirmDelete by remember { mutableStateOf(false) }
+
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Delete ${device.name}?") },
+            text = {
+                Text(
+                    "Its switches, readings, usage history and alerts are deleted with it. " +
+                        "This cannot be undone."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDelete = false
+                    viewModel.deleteDevice(device)
+                    onDismiss()
+                }) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }) { Text("Cancel") }
+            }
+        )
+    }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(
@@ -105,6 +135,15 @@ fun DeviceDetailSheet(device: Device, viewModel: HomeViewModel, onDismiss: () ->
             MetaSection(device, viewModel)
             HorizontalDivider()
             UsageHistorySection(device, context, viewModel)
+            HorizontalDivider()
+
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.s)) {
+                TextButton(onClick = {
+                    onDismiss()
+                    onEdit()
+                }) { Text("Edit device") }
+                TextButton(onClick = { confirmDelete = true }) { Text("Delete device") }
+            }
         }
     }
 }

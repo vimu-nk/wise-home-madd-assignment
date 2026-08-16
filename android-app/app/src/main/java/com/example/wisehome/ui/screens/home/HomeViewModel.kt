@@ -14,6 +14,7 @@ import com.example.wisehome.data.model.FanSpeed
 import com.example.wisehome.data.model.Floor
 import com.example.wisehome.data.model.LightSchedule
 import com.example.wisehome.data.model.SafetyPreset
+import com.example.wisehome.data.model.SensorType
 import com.example.wisehome.data.model.Room
 import com.example.wisehome.data.model.ThermostatMode
 import com.example.wisehome.data.model.UsageLog
@@ -60,9 +61,6 @@ class HomeViewModel(
     private val _selectedFloorId = MutableStateFlow<String?>(null)
     val selectedFloorId: StateFlow<String?> = _selectedFloorId.asStateFlow()
 
-    private val _selectedRoomLabel = MutableStateFlow<String?>(null)
-    val selectedRoomLabel: StateFlow<String?> = _selectedRoomLabel.asStateFlow()
-
     private val _selectedDeviceId = MutableStateFlow<String?>(null)
 
     private val _usageHistoryVisible = MutableStateFlow(false)
@@ -82,7 +80,6 @@ class HomeViewModel(
                 val current = _selectedFloorId.value
                 if (current == null || loaded.none { it.id == current }) {
                     _selectedFloorId.value = loaded.firstOrNull()?.id
-                    _selectedRoomLabel.value = null
                 }
             }
         }
@@ -93,11 +90,6 @@ class HomeViewModel(
 
     fun selectFloor(floorId: String) {
         _selectedFloorId.value = floorId
-        _selectedRoomLabel.value = null
-    }
-
-    fun selectRoom(roomLabel: String?) {
-        _selectedRoomLabel.value = roomLabel
     }
 
     val devicesOnSelectedFloor: StateFlow<List<Device>> =
@@ -194,6 +186,71 @@ class HomeViewModel(
     fun toggleUsageHistory() {
         _usageHistoryVisible.value = !_usageHistoryVisible.value
     }
+
+    // ---- Device management ----
+
+    private val _editorError = MutableStateFlow<String?>(null)
+    val editorError: StateFlow<String?> = _editorError.asStateFlow()
+
+    fun clearEditorError() { _editorError.value = null }
+
+    /**
+     * Creates the device, then its type-specific extension row. If the second step
+     * fails the device is removed again rather than left half-built — a multiswitch
+     * with no switches or a sensor with no sensor row is inert and confusing.
+     */
+    fun addDevice(
+        floorId: String,
+        name: String,
+        type: DeviceType,
+        gridX: Int,
+        gridY: Int,
+        sensorType: SensorType = SensorType.MOTION,
+        switchCount: Int = 2,
+        safetyKind: String = "iron",
+        applianceType: String? = null
+    ) {
+        viewModelScope.launch {
+            val created = runCatching {
+                deviceRepository.addDevice(floorId, name.trim(), type, gridX, gridY, applianceType)
+            }.getOrElse {
+                _editorError.value = it.message ?: "That device could not be created"
+                return@launch
+            }
+
+            runCatching {
+                extrasRepository.createExtensionRow(created.id, type, sensorType, switchCount, safetyKind)
+            }.onFailure {
+                runCatching { deviceRepository.deleteDevice(created.id) }
+                _editorError.value = "Couldn't set up the ${deviceTypeName(type)}: ${it.message}"
+            }
+        }
+    }
+
+    fun updateDevice(
+        device: Device,
+        name: String,
+        gridX: Int,
+        gridY: Int,
+        floorId: String,
+        applianceType: String? = device.applianceType
+    ) {
+        viewModelScope.launch {
+            runCatching {
+                deviceRepository.updateDevice(device.id, name.trim(), gridX, gridY, floorId, applianceType)
+            }.onFailure { _editorError.value = it.message ?: "That change could not be saved" }
+        }
+    }
+
+    fun deleteDevice(device: Device) {
+        viewModelScope.launch {
+            runCatching { deviceRepository.deleteDevice(device.id) }
+                .onSuccess { if (_selectedDeviceId.value == device.id) _selectedDeviceId.value = null }
+                .onFailure { _editorError.value = it.message ?: "That device could not be deleted" }
+        }
+    }
+
+    private fun deviceTypeName(type: DeviceType) = type.name.lowercase().replace('_', ' ')
 
     // ---- Scheduled lights ----
 

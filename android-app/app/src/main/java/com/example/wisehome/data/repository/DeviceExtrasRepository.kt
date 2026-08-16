@@ -8,6 +8,8 @@ import com.example.wisehome.data.model.FanSpeed
 import com.example.wisehome.data.model.PowerMetrics
 import com.example.wisehome.data.model.SafetyConfig
 import com.example.wisehome.data.model.SafetyPreset
+import com.example.wisehome.data.model.DeviceType
+import com.example.wisehome.data.model.SensorType
 import com.example.wisehome.data.model.Sensor
 import com.example.wisehome.data.model.SmartLock
 import com.example.wisehome.data.model.Thermostat
@@ -28,6 +30,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 
 /**
  * Reads/writes for the type-specific extension tables (section 4 of the spec).
@@ -133,6 +137,68 @@ class DeviceExtrasRepository(
             }
         }
         invalidate("lock-$deviceId")
+    }
+
+    /**
+     * Creates the type-specific row a freshly added device needs.
+     *
+     * Without this a new multiswitch has no switches, a new camera can never show a
+     * snapshot, and a new hazard appliance has no cut-off — the device would exist but
+     * be inert, which is worse than not being creatable at all.
+     *
+     * Failures are reported to the caller rather than swallowed: the device row already
+     * exists at this point, so silently skipping would leave a half-built device.
+     */
+    suspend fun createExtensionRow(
+        deviceId: String,
+        type: DeviceType,
+        sensorType: SensorType = SensorType.MOTION,
+        switchCount: Int = 2,
+        safetyKind: String = "iron"
+    ) {
+        when (type) {
+            DeviceType.MULTISWITCH ->
+                postgrest.from("device_switches").insert(
+                    (1..switchCount).map { index ->
+                        SwitchInsert(deviceId, index, "Switch $index")
+                    }
+                )
+
+            DeviceType.CAMERA ->
+                postgrest.from("cameras").insert(DeviceIdRow(deviceId))
+
+            DeviceType.SMART_LOCK ->
+                postgrest.from("smart_locks").insert(DeviceIdRow(deviceId))
+
+            DeviceType.SENSOR ->
+                postgrest.from("sensors").insert(SensorInsert(deviceId, sensorType))
+
+            DeviceType.AC_UNIT ->
+                postgrest.from("ac_units").insert(DeviceIdRow(deviceId))
+
+            DeviceType.THERMOSTAT ->
+                // controls_device_id is left null: the AC it drives is chosen later, and
+                // a thermostat with no unit still reports its own target temperature.
+                postgrest.from("thermostats").insert(DeviceIdRow(deviceId))
+
+            DeviceType.SMART_PLUG_METERED ->
+                postgrest.from("power_metrics").insert(DeviceIdRow(deviceId))
+
+            DeviceType.SCHEDULED_SAFETY -> {
+                val preset = runCatching { getSafetyPreset(safetyKind) }.getOrNull()
+                postgrest.from("safety_configs").insert(
+                    SafetyConfigInsert(
+                        deviceId = deviceId,
+                        kind = safetyKind,
+                        maxOnDurationSeconds = preset?.defaultSeconds ?: 900
+                    )
+                )
+            }
+
+            // Outlets, appliances and scheduled lights have no extension row; a light's
+            // windows are added from its detail sheet afterwards.
+            DeviceType.OUTLET, DeviceType.APPLIANCE, DeviceType.SCHEDULED_LIGHT -> Unit
+        }
     }
 
     // ---- Safety-capped devices (iron, heaters, hair dryer) ----
@@ -260,3 +326,29 @@ class DeviceExtrasRepository(
             filter { eq("device_id", deviceId) }
         }.decodeSingleOrNull()
 }
+
+// ---- Insert payloads for newly created devices ----
+
+/** Extension tables that need nothing but the device they belong to. */
+@Serializable
+private data class DeviceIdRow(@SerialName("device_id") val deviceId: String)
+
+@Serializable
+private data class SwitchInsert(
+    @SerialName("device_id") val deviceId: String,
+    @SerialName("switch_index") val switchIndex: Int,
+    val label: String
+)
+
+@Serializable
+private data class SensorInsert(
+    @SerialName("device_id") val deviceId: String,
+    @SerialName("sensor_type") val sensorType: SensorType
+)
+
+@Serializable
+private data class SafetyConfigInsert(
+    @SerialName("device_id") val deviceId: String,
+    val kind: String,
+    @SerialName("max_on_duration_seconds") val maxOnDurationSeconds: Int
+)
